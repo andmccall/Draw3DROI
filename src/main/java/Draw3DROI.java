@@ -26,7 +26,6 @@ import org.scijava.app.StatusService;
 import org.scijava.command.Command;
 import org.scijava.command.InteractiveCommand;
 import org.scijava.display.Display;
-import org.scijava.log.LogService;
 import org.scijava.plugin.Parameter;
 import org.scijava.plugin.Plugin;
 import org.scijava.ui.UIService;
