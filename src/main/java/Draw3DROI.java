@@ -6,49 +6,34 @@ import net.imagej.ImgPlus;
 import net.imagej.axis.Axes;
 import net.imagej.display.DataView;
 import net.imagej.display.ImageDisplayService;
-import net.imagej.display.OverlayService;
-import net.imagej.ops.Op;
 import net.imagej.ops.OpService;
 import net.imagej.ops.Ops;
-import net.imagej.ops.commands.project.ProjectMethod;
-import net.imagej.ops.special.SpecialOp;
 import net.imagej.ops.special.computer.Computers;
 import net.imagej.ops.special.computer.UnaryComputerOp;
 import net.imglib2.FinalDimensions;
-import net.imglib2.IterableInterval;
 import net.imglib2.RandomAccessibleInterval;
 import net.imglib2.img.Img;
 import net.imglib2.img.ImgView;
 import net.imglib2.loops.LoopBuilder;
-import net.imglib2.type.Type;
 import net.imglib2.type.logic.BitType;
-import net.imglib2.type.numeric.ComplexType;
 import net.imglib2.type.numeric.RealType;
-import net.imglib2.type.numeric.integer.ByteType;
 import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.util.Intervals;
 import net.imglib2.view.Views;
 import org.scijava.ItemIO;
 import org.scijava.ItemVisibility;
-import org.scijava.app.AppService;
 import org.scijava.app.StatusService;
 import org.scijava.command.Command;
 import org.scijava.command.InteractiveCommand;
 import org.scijava.display.Display;
-import org.scijava.display.DisplayService;
 import org.scijava.log.LogService;
-import org.scijava.platform.PlatformService;
 import org.scijava.plugin.Parameter;
 import org.scijava.plugin.Plugin;
 import org.scijava.ui.UIService;
 import org.scijava.widget.Button;
-import org.scijava.widget.MessageWidget;
 
 @Plugin(type = Command.class, headless = false, menuPath = "Plugins>Draw 3D ROI", initializer = "init")
 public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
-
-    @Parameter
-    protected LogService logService;
 
     @Parameter
     protected StatusService statusService;
@@ -84,10 +69,6 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
     @Parameter
     protected ImgPlus<T> inputImage;
 
-    //Need to update the display of the data, without copying or duplicating the data. Possibilities: ImageDisplayService, ImageDisplay
-//    @Parameter
-//    protected DatasetView inputView;
-
     @Parameter(type = ItemIO.OUTPUT)
     protected Dataset outputMask;
 
@@ -113,12 +94,6 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
     private long xDim, yDim, zDim;
     private Roi xyROI, xzROI, yzROI;
 
-//    protected boolean showDialog(String title){
-//        DialogPrompt.Result userSelection = uiService.showDialog(standardMessage,title, DialogPrompt.MessageType.PLAIN_MESSAGE, DialogPrompt.OptionType.OK_CANCEL_OPTION);
-//        if (userSelection == DialogPrompt.Result.CANCEL_OPTION)
-//                return false;
-//        return true;
-//    }
 
     @Override
     public void run(){
@@ -142,6 +117,8 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
         updateDisplay();
     }
 
+
+    //final Overlay o = overlayService.getActiveOverlay(display); //will try and compare
     protected void addROI(){
         switch (viewChoiceSelection){
             case "XY":
@@ -164,7 +141,7 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
         int i = 0;
 
         for (int d = 0; d < input.numDimensions(); d++) {
-            if (d != 2) {
+            if (d != zIndex) {
                 projectedDimensions[i] = input.dimension(d);
                 i++;
             }
@@ -176,7 +153,7 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
 
         UnaryComputerOp maxOp = Computers.unary(ops, projectionChoice.projectorOp, projection.firstElement(), currentView);
 
-        ops.transform().project(projection, input, maxOp, 2);
+        ops.transform().project(projection, input, maxOp, zIndex);
         return projection;
     }
 
@@ -225,17 +202,6 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
     }
 
 
-//            uiService.show(Views.moveAxis(inputImage, xIndex, zIndex));
-//
-//        ij.WindowManager.getCurrentImage().getRoi();
-    //final Overlay o = overlayService.getActiveOverlay(display); //to get ROI?
 
-    /*
-    Get intersection procedure:
-    1. Get 3 2D images as masks for each cross-section
-    2. LoopBuilder parallel through every pixel
-    3. For each, convert 3D point to corresponding 2D point in XY, then compare to XY mask
-    4. Repeat for XZ and YZ
-    5. If meets all three, add to output mask image
-     */
+
 }
