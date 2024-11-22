@@ -2,13 +2,34 @@ import ij.WindowManager;
 import ij.gui.Roi;
 import net.imagej.Dataset;
 import net.imagej.DatasetService;
+import net.imagej.ImgPlus;
 import net.imagej.axis.Axes;
 import net.imagej.display.DataView;
 import net.imagej.display.ImageDisplayService;
 import net.imagej.display.OverlayService;
+import net.imagej.ops.Op;
+import net.imagej.ops.OpService;
+import net.imagej.ops.Ops;
+import net.imagej.ops.commands.project.ProjectMethod;
+import net.imagej.ops.special.SpecialOp;
+import net.imagej.ops.special.computer.Computers;
+import net.imagej.ops.special.computer.UnaryComputerOp;
+import net.imglib2.FinalDimensions;
+import net.imglib2.IterableInterval;
 import net.imglib2.RandomAccessibleInterval;
+import net.imglib2.img.Img;
+import net.imglib2.img.ImgView;
+import net.imglib2.loops.LoopBuilder;
+import net.imglib2.type.Type;
+import net.imglib2.type.logic.BitType;
+import net.imglib2.type.numeric.ComplexType;
+import net.imglib2.type.numeric.RealType;
+import net.imglib2.type.numeric.integer.ByteType;
+import net.imglib2.type.numeric.real.FloatType;
+import net.imglib2.util.Intervals;
 import net.imglib2.view.Views;
 import org.scijava.ItemIO;
+import org.scijava.ItemVisibility;
 import org.scijava.app.AppService;
 import org.scijava.app.StatusService;
 import org.scijava.command.Command;
@@ -21,9 +42,10 @@ import org.scijava.plugin.Parameter;
 import org.scijava.plugin.Plugin;
 import org.scijava.ui.UIService;
 import org.scijava.widget.Button;
+import org.scijava.widget.MessageWidget;
 
 @Plugin(type = Command.class, headless = false, menuPath = "Plugins>Draw 3D ROI", initializer = "init")
-public class Draw3DROI extends InteractiveCommand {
+public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
 
     @Parameter
     protected LogService logService;
@@ -40,14 +62,27 @@ public class Draw3DROI extends InteractiveCommand {
     @Parameter
     protected UIService uiService;
 
-    @Parameter(label="Display view:",choices={"XY", "XZ", "YZ"}, style="radioButtonHorizontal", persist=false, callback="viewChoice")
+    @Parameter
+    protected OpService ops;
+
+    @Parameter(visibility = ItemVisibility.MESSAGE, persist = false)
+    private final String msg =
+            "Draw any ROI selection for each perspective, then click Create 3D mask." ;
+
+    @Parameter(label="Display perspective:",choices={"XY", "XZ", "YZ"}, style="radioButtonHorizontal", persist=false, callback="viewChoice")
     private String viewChoiceSelection;
 
-    @Parameter(label="Add view-specific ROI.", callback = "addROI")
+    @Parameter(label="Projection method:", persist = false, callback = "viewChoice")
+    private projectionMethods projectionChoice;
+
+    @Parameter(label="Add perspective's ROI.", callback = "addROI")
     private Button addROIButton;
 
+    @Parameter(label="Create 3D mask", callback = "generateMask")
+    private Button createMaskButton;
+
     @Parameter
-    protected Dataset inputImage;
+    protected ImgPlus<T> inputImage;
 
     //Need to update the display of the data, without copying or duplicating the data. Possibilities: ImageDisplayService, ImageDisplay
 //    @Parameter
@@ -56,11 +91,24 @@ public class Draw3DROI extends InteractiveCommand {
     @Parameter(type = ItemIO.OUTPUT)
     protected Dataset outputMask;
 
+    protected enum projectionMethods{
+        NONE(null),
+        MAX(Ops.Stats.Max.class),
+        MEAN(Ops.Stats.Mean.class),
+        MEDIAN(Ops.Stats.Median.class),
+        VARIANCE(Ops.Stats.Variance.class);
+
+        Class projectorOp;
+
+        projectionMethods(Class projectorOp){
+            this.projectorOp = projectorOp;
+        }
+    }
 
     private DataView currentDisplayView;
     protected Display currentDisplay;
-    private RandomAccessibleInterval currentView;
-    private String standardMessage = "Draw an ROI to define bounds from this perspective, then press OK.";
+    private RandomAccessibleInterval<FloatType> floatView;
+    private Img<FloatType> currentView;
     private int xIndex, yIndex, zIndex;
     private long xDim, yDim, zDim;
     private Roi xyROI, xzROI, yzROI;
@@ -79,14 +127,17 @@ public class Draw3DROI extends InteractiveCommand {
     protected void viewChoice(){
         switch (viewChoiceSelection){
             case "XY":
-                currentView = inputImage;
+                currentView = ImgView.wrap(floatView);
                 break;
             case "XZ":
-                currentView = Views.moveAxis(inputImage, yIndex, zIndex);
+                currentView = ImgView.wrap(Views.moveAxis(floatView, yIndex, zIndex));
                 break;
             case "YZ":
-                currentView = Views.moveAxis(inputImage, xIndex, zIndex);
+                currentView = ImgView.wrap(Views.moveAxis(floatView, xIndex, zIndex));
                 break;
+        }
+        if(projectionChoice != projectionMethods.NONE) {
+            currentView = zProject(currentView);
         }
         updateDisplay();
     }
@@ -107,6 +158,48 @@ public class Draw3DROI extends InteractiveCommand {
         WindowManager.getCurrentImage().deleteRoi();
     }
 
+    protected Img zProject(Img input){
+        long[] projectedDimensions = new long[input.numDimensions() - 1];
+
+        int i = 0;
+
+        for (int d = 0; d < input.numDimensions(); d++) {
+            if (d != 2) {
+                projectedDimensions[i] = input.dimension(d);
+                i++;
+            }
+        }
+
+        Img projection = ops.create().img(new FinalDimensions(
+                projectedDimensions),new FloatType());
+
+
+        UnaryComputerOp maxOp = Computers.unary(ops, projectionChoice.projectorOp, projection.firstElement(), currentView);
+
+        ops.transform().project(projection, input, maxOp, 2);
+        return projection;
+    }
+
+    protected void generateMask(){
+        statusService.showStatus("Generating mask.");
+        Img<BitType> outputImg = ops.create().img(inputImage, new BitType());
+
+        LoopBuilder.setImages(Intervals.positions(outputImg), outputImg).multiThreaded().forEachPixel(
+                (position, value) ->{
+                    int x = position.getIntPosition(0);
+                    int y = position.getIntPosition(1);
+                    int z = position.getIntPosition(2);
+
+                    if(xyROI.contains(x,y) && xzROI.contains(x, z) && yzROI.contains(y,z))
+                        value.setOne();
+                }
+        );
+
+        outputMask = datasetService.create(ImgPlus.wrap(outputImg,inputImage));
+        uiService.show(outputMask);
+        statusService.showStatus("Mask Generated.");
+    }
+
     private void updateDisplay(){
         currentDisplay.close();
         currentDisplayView.dispose();
@@ -119,12 +212,13 @@ public class Draw3DROI extends InteractiveCommand {
         yIndex = inputImage.dimensionIndex(Axes.Y);
         zIndex = inputImage.dimensionIndex(Axes.Z);
 
-        xDim = inputImage.dimension(Axes.X);
-        yDim = inputImage.dimension(Axes.Y);
-        zDim = inputImage.dimension(Axes.Z);
+        xDim = inputImage.dimension(xIndex);
+        yDim = inputImage.dimension(yIndex);
+        zDim = inputImage.dimension(zIndex);
 
-        currentView = inputImage;
+        floatView = ops.convert().float32(inputImage);
 
+        currentView = ImgView.wrap(floatView);
 
         currentDisplayView = imageDisplayService.createDataView(datasetService.create(currentView));
         currentDisplay = imageDisplayService.getDisplayService().createDisplay(currentDisplayView);
