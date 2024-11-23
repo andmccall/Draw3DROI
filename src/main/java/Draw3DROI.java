@@ -162,7 +162,8 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
 
     protected void generateMask(){
         statusService.showStatus("Generating mask.");
-        Img<BitType> outputImg = ops.create().img(inputImage, new BitType());
+        FinalDimensions dims = new FinalDimensions(xDim, yDim, zDim);
+        Img<BitType> outputImg = ops.create().img(dims, new BitType());
 
         LoopBuilder.setImages(Intervals.positions(outputImg), outputImg).multiThreaded().forEachPixel(
                 (position, value) ->{
@@ -175,7 +176,8 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
                 }
         );
 
-        outputMask = datasetService.create(ImgPlus.wrap(outputImg,inputImage));
+        //todo: add scaling back to output image
+        outputMask = datasetService.create(ImgPlus.wrap(outputImg));
         uiService.show(outputMask);
         statusService.showStatus("Mask Generated.");
     }
