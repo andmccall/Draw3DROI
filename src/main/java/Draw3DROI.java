@@ -154,7 +154,7 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
                 projectedDimensions),new FloatType());
 
 
-        UnaryComputerOp maxOp = Computers.unary(ops, projectionChoice.projectorOp, projection.firstElement(), currentView);
+        UnaryComputerOp maxOp = Computers.unary(ops, projectionChoice.projectorOp, projection.firstElement(), input);
 
         ops.transform().project(projection, input, maxOp, zIndex);
         return projection;
@@ -170,7 +170,7 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
                     int y = position.getIntPosition(1);
                     int z = position.getIntPosition(2);
 
-                    if(xyROI.contains(x,y) && xzROI.contains(x, z) && yzROI.contains(y,z))
+                    if(xyROI.contains(x,y) && xzROI.contains(x, z) && yzROI.contains(z,y))
                         value.setOne();
                 }
         );
@@ -183,7 +183,7 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
     private void updateDisplay(){
         currentDisplay.close();
         currentDisplayView.dispose();
-        currentDisplayView = imageDisplayService.createDataView(datasetService.create(ImgPlus.wrap(currentView, inputImage)));
+        currentDisplayView = imageDisplayService.createDataView(datasetService.create(currentView));
         currentDisplay = imageDisplayService.getDisplayService().createDisplay(currentDisplayView);
     }
 
