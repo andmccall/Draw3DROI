@@ -26,6 +26,7 @@ import org.scijava.app.StatusService;
 import org.scijava.command.Command;
 import org.scijava.command.InteractiveCommand;
 import org.scijava.display.Display;
+import org.scijava.log.LogService;
 import org.scijava.plugin.Parameter;
 import org.scijava.plugin.Plugin;
 import org.scijava.ui.UIService;
@@ -36,6 +37,9 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
 
     @Parameter
     protected StatusService statusService;
+
+    @Parameter
+    protected LogService logService;
 
     @Parameter
     protected DatasetService datasetService;
@@ -104,10 +108,10 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
                 currentView = ImgView.wrap(floatView);
                 break;
             case "XZ":
-                currentView = ImgView.wrap(Views.moveAxis(floatView, yIndex, zIndex));
+                currentView = ImgView.wrap(Views.permute(floatView, yIndex, zIndex));
                 break;
             case "YZ":
-                currentView = ImgView.wrap(Views.moveAxis(floatView, xIndex, zIndex));
+                currentView = ImgView.wrap(Views.permute(floatView, xIndex, zIndex));
                 break;
         }
         if(projectionChoice != projectionMethods.NONE) {
@@ -179,7 +183,7 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
     private void updateDisplay(){
         currentDisplay.close();
         currentDisplayView.dispose();
-        currentDisplayView = imageDisplayService.createDataView(datasetService.create(currentView));
+        currentDisplayView = imageDisplayService.createDataView(datasetService.create(ImgPlus.wrap(currentView, inputImage)));
         currentDisplay = imageDisplayService.getDisplayService().createDisplay(currentDisplayView);
     }
 
