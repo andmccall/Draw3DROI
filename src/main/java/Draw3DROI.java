@@ -192,7 +192,8 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
     private void updateDisplay(){
         currentDisplay.close();
         currentDisplayView.dispose();
-        currentDisplayView = imageDisplayService.createDataView(datasetService.create(currentView));
+        Dataset displayData = datasetService.create(currentView);
+        currentDisplayView = imageDisplayService.createDataView(displayData);
         currentDisplay = imageDisplayService.getDisplayService().createDisplay(currentDisplayView);
     }
 
@@ -207,7 +208,6 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
 
         currentView = inputImage;
 
-        currentDisplayView = imageDisplayService.createDataView(datasetService.create(currentView));
-        currentDisplay = imageDisplayService.getDisplayService().createDisplay(currentDisplayView);
+        updateDisplay();
     }
 }
