@@ -176,8 +176,10 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
                 }
         );
 
-        //todo: add scaling back to output image
         outputMask = datasetService.create(ImgPlus.wrap(outputImg));
+        outputMask.setAxis(inputImage.axis(xIndex), 0);
+        outputMask.setAxis(inputImage.axis(yIndex), 1);
+        outputMask.setAxis(inputImage.axis(zIndex), 2);
         uiService.show(outputMask);
         statusService.showStatus("Mask Generated.");
     }
@@ -205,8 +207,4 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
         currentDisplayView = imageDisplayService.createDataView(datasetService.create(currentView));
         currentDisplay = imageDisplayService.getDisplayService().createDisplay(currentDisplayView);
     }
-
-
-
-
 }
