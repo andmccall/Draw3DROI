@@ -11,7 +11,6 @@ import net.imagej.ops.Ops;
 import net.imagej.ops.special.computer.Computers;
 import net.imagej.ops.special.computer.UnaryComputerOp;
 import net.imglib2.FinalDimensions;
-import net.imglib2.RandomAccessibleInterval;
 import net.imglib2.img.Img;
 import net.imglib2.img.ImgView;
 import net.imglib2.loops.LoopBuilder;
@@ -91,8 +90,7 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
 
     private DataView currentDisplayView;
     protected Display currentDisplay;
-    private RandomAccessibleInterval<FloatType> floatView;
-    private Img<FloatType> currentView;
+    private Img currentView;
     private int xIndex, yIndex, zIndex;
     private long xDim, yDim, zDim;
     private Roi xyROI, xzROI, yzROI;
@@ -105,13 +103,13 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
     protected void viewChoice(){
         switch (viewChoiceSelection){
             case "XY":
-                currentView = ImgView.wrap(floatView);
+                currentView = ImgView.wrap(inputImage);
                 break;
             case "XZ":
-                currentView = ImgView.wrap(Views.permute(floatView, yIndex, zIndex));
+                currentView = ImgView.wrap(Views.permute(inputImage, yIndex, zIndex));
                 break;
             case "YZ":
-                currentView = ImgView.wrap(Views.permute(floatView, xIndex, zIndex));
+                currentView = ImgView.wrap(Views.permute(inputImage, xIndex, zIndex));
                 break;
         }
         if(projectionChoice != projectionMethods.NONE) {
@@ -138,11 +136,13 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
         WindowManager.getCurrentImage().deleteRoi();
     }
 
-    protected Img zProject(Img input){
+    protected Img zProject(Img input) {
+        logService.warn("Started z-project");
         long[] projectedDimensions = new long[input.numDimensions() - 1];
 
         int i = 0;
 
+        logService.warn("Getting Dimensions");
         for (int d = 0; d < input.numDimensions(); d++) {
             if (d != zIndex) {
                 projectedDimensions[i] = input.dimension(d);
@@ -150,9 +150,14 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
             }
         }
 
-        Img projection = ops.create().img(new FinalDimensions(
-                projectedDimensions),new FloatType());
-
+        Img projection;
+        if(projectionChoice == projectionMethods.MAX){
+            projection = input.factory().create(new FinalDimensions(projectedDimensions));
+        }
+        else{
+            projection = ops.create().img(new FinalDimensions(
+                    projectedDimensions),new FloatType());
+        }
 
         UnaryComputerOp maxOp = Computers.unary(ops, projectionChoice.projectorOp, projection.firstElement(), input);
 
@@ -200,9 +205,7 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
         yDim = inputImage.dimension(yIndex);
         zDim = inputImage.dimension(zIndex);
 
-        floatView = ops.convert().float32(inputImage);
-
-        currentView = ImgView.wrap(floatView);
+        currentView = inputImage;
 
         currentDisplayView = imageDisplayService.createDataView(datasetService.create(currentView));
         currentDisplay = imageDisplayService.getDisplayService().createDisplay(currentDisplayView);
