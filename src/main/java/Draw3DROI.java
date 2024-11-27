@@ -3,16 +3,16 @@ import ij.gui.Roi;
 import net.imagej.Dataset;
 import net.imagej.DatasetService;
 import net.imagej.ImgPlus;
+import net.imagej.Position;
 import net.imagej.axis.Axes;
-import net.imagej.display.DataView;
 import net.imagej.display.DatasetView;
-import net.imagej.display.DefaultDatasetView;
 import net.imagej.display.ImageDisplayService;
 import net.imagej.ops.OpService;
 import net.imagej.ops.Ops;
 import net.imagej.ops.special.computer.Computers;
 import net.imagej.ops.special.computer.UnaryComputerOp;
 import net.imglib2.FinalDimensions;
+import net.imglib2.RandomAccessibleInterval;
 import net.imglib2.img.Img;
 import net.imglib2.img.ImgView;
 import net.imglib2.loops.LoopBuilder;
@@ -58,7 +58,7 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
     private final String msg =
             "Draw any ROI selection for each perspective, then click Create 3D mask." ;
 
-    @Parameter(label="Display perspective:",choices={"XY", "XZ", "YZ"}, style="radioButtonHorizontal", persist=false, callback="viewChoice")
+    @Parameter(label="Display perspective:",choices={"Front (XY)", "Top (XZ)", "Left (YZ)"}, style="radioButtonHorizontal", persist=false, callback="viewChoice")
     private String viewChoiceSelection;
 
     @Parameter(label="Projection method:", persist = false, callback = "viewChoice")
@@ -66,6 +66,9 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
 
     @Parameter(label="Add perspective's ROI.", callback = "addROI")
     private Button addROIButton;
+
+    @Parameter(label="Preview?")
+    private boolean preview;
 
     @Parameter(label="Create 3D mask", callback = "generateMask")
     private Button createMaskButton;
@@ -99,12 +102,53 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
     private Img currentView;
     private int xIndex, yIndex, zIndex, chIndex;
     private long xDim, yDim, zDim;
-    private Roi xyROI, xzROI, yzROI;
+    private Roi xyROI, xzROI, zyROI;
 
 
     @Override
     public void run(){
     }
+
+    @Override
+    public void preview(){
+        if(!preview)
+            return;
+        if(projectionChoice == projectionMethods.NONE)
+            preview3d();
+        else
+            preview2d();
+    }
+
+    protected void preview2d(){
+
+    }
+
+    protected void preview3d(){
+        RandomAccessibleInterval currentSliceImage = currentDisplayView.xyPlane();
+        //long currentSliceValue = currentDisplayView.getPlanePosition().getIndex();
+        int currentSliceValue = WindowManager.getCurrentImage().getSlice();
+
+
+
+        switch (viewChoiceSelection){
+            case "XY":
+
+                break;
+            case "XZ":
+
+                break;
+            case "YZ":
+
+                break;
+        }
+        currentDisplay.add()?
+    }
+
+//    @Override
+//    public void onEvent(DisplayUpdatedEvent){
+//
+//    }
+
 
     protected void viewChoice(){
         switch (viewChoiceSelection){
@@ -140,7 +184,7 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
                 xzROI = inputROI;
                 break;
             case "YZ":
-                yzROI = inputROI;
+                zyROI = inputROI;
                 break;
         }
         statusService.showStatus("ROI registered");
@@ -174,7 +218,7 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
     }
 
     protected void generateMask(){
-        if(xyROI == null || xzROI == null || yzROI == null){
+        if(xyROI == null || xzROI == null || zyROI == null){
             logService.warn("Must add an ROI for each perspective to generate 3D mask");
             return;
         }
@@ -188,7 +232,7 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
                     int y = position.getIntPosition(1);
                     int z = position.getIntPosition(2);
 
-                    if(xyROI.contains(x,y) && xzROI.contains(x, z) && yzROI.contains(z,y))
+                    if(xyROI.contains(x,y) && xzROI.contains(x, z) && zyROI.contains(z,y))
                         value.setOne();
                 }
         );
@@ -241,6 +285,10 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
         xDim = inputImage.dimension(xIndex);
         yDim = inputImage.dimension(yIndex);
         zDim = inputImage.dimension(zIndex);
+
+        xyROI = new Roi(0,0,xDim,yDim);
+        xzROI = new Roi(0,0,xDim,zDim);
+        zyROI = new Roi(0,0,zDim,yDim);
 
         currentView = inputImage;
 
