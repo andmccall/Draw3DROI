@@ -13,7 +13,7 @@
 
     <groupId>oiaf.plugins</groupId>
     <artifactId>Draw3D-ROI</artifactId>
-    <version>0.1.5-SNAPSHOT</version>
+    <version>0.1.5</version>
 
     <name>Draw3D-ROI</name>
     <description>ImageJ/Scijava plugin to draw 3D ROI from orthogonal image views</description>
