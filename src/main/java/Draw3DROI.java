@@ -93,6 +93,7 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
         }
     }
 
+    private String imageName;
     private DatasetView currentDisplayView;
     protected Display currentDisplay;
     private Img currentView;
@@ -187,6 +188,7 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
         outputMask.setAxis(inputImage.axis(xIndex), 0);
         outputMask.setAxis(inputImage.axis(yIndex), 1);
         outputMask.setAxis(inputImage.axis(zIndex), 2);
+        outputMask.setName("3D mask-"+ imageName);
         uiService.show(outputMask);
         statusService.showStatus("Mask Generated.");
     }
@@ -195,25 +197,33 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
         if(currentDisplay != null) currentDisplay.close();
         if(currentDisplayView != null) currentDisplayView.dispose();
         Dataset displayData = datasetService.create(currentView);
+        displayData.setName("Working image-draw ROI");
 
-        for (int i = 0; i < displayData.getColorTableCount(); i++) {
-            displayData.setColorTable(inputImage.getColorTable(i), i);
-            displayData.setChannelMinimum(i, inputImage.getChannelMinimum(i));
-            displayData.setChannelMaximum(i, inputImage.getChannelMaximum(i));
-        }
+        int currChIndex;
+
         if(projectionChoice != projectionMethods.NONE && chIndex > zIndex)
-            displayData.axis(chIndex-1).setType(Axes.CHANNEL);
+            currChIndex = chIndex-1;
         else
-            displayData.axis(chIndex).setType(Axes.CHANNEL);
+            currChIndex = chIndex;
+        displayData.axis(currChIndex).setType(Axes.CHANNEL);
         displayData.setCompositeChannelCount(inputImage.getCompositeChannelCount());
+        //todo: Add ColorTable copying. Tried previously but couldn't get it working.
+
         currentDisplayView = (DatasetView) imageDisplayService.createDataView(displayData);
         currentDisplay = imageDisplayService.getDisplayService().createDisplay(currentDisplayView);
-//        currentDisplayView.setColorMode(inputView.getColorMode());
-//        currentDisplayView.setComposite(inputView.getProjector().isComposite());
 
+        //This next section seems to only affect ImageJ2, not Fiji.
+        if (projectionChoice == projectionMethods.NONE) {
+            for (int i = 0; i < inputView.getChannelCount(); i++) {
+                currentDisplayView.setChannelRange(i, inputView.getChannelMin(i), inputView.getChannelMax(i));
+            }
+            currentDisplayView.update();
+        }
     }
 
     protected void init() {
+        imageName = inputImage.getName();
+
         xIndex = inputImage.dimensionIndex(Axes.X);
         yIndex = inputImage.dimensionIndex(Axes.Y);
         zIndex = inputImage.dimensionIndex(Axes.Z);
