@@ -5,6 +5,8 @@ import net.imagej.DatasetService;
 import net.imagej.ImgPlus;
 import net.imagej.axis.Axes;
 import net.imagej.display.DataView;
+import net.imagej.display.DatasetView;
+import net.imagej.display.DefaultDatasetView;
 import net.imagej.display.ImageDisplayService;
 import net.imagej.ops.OpService;
 import net.imagej.ops.Ops;
@@ -71,6 +73,9 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
     @Parameter
     protected ImgPlus<T> inputImage;
 
+    @Parameter
+    protected DatasetView inputView;
+
     @Parameter(type = ItemIO.OUTPUT)
     protected Dataset outputMask;
 
@@ -88,10 +93,10 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
         }
     }
 
-    private DataView currentDisplayView;
+    private DatasetView currentDisplayView;
     protected Display currentDisplay;
     private Img currentView;
-    private int xIndex, yIndex, zIndex;
+    private int xIndex, yIndex, zIndex, chIndex;
     private long xDim, yDim, zDim;
     private Roi xyROI, xzROI, yzROI;
 
@@ -137,12 +142,10 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
     }
 
     protected Img zProject(Img input) {
-        logService.warn("Started z-project");
         long[] projectedDimensions = new long[input.numDimensions() - 1];
 
         int i = 0;
 
-        logService.warn("Getting Dimensions");
         for (int d = 0; d < input.numDimensions(); d++) {
             if (d != zIndex) {
                 projectedDimensions[i] = input.dimension(d);
@@ -160,7 +163,6 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
         }
 
         UnaryComputerOp maxOp = Computers.unary(ops, projectionChoice.projectorOp, projection.firstElement(), input);
-
         ops.transform().project(projection, input, maxOp, zIndex);
         return projection;
     }
@@ -190,17 +192,32 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
     }
 
     private void updateDisplay(){
-        currentDisplay.close();
-        currentDisplayView.dispose();
+        if(currentDisplay != null) currentDisplay.close();
+        if(currentDisplayView != null) currentDisplayView.dispose();
         Dataset displayData = datasetService.create(currentView);
-        currentDisplayView = imageDisplayService.createDataView(displayData);
+
+        for (int i = 0; i < displayData.getColorTableCount(); i++) {
+            displayData.setColorTable(inputImage.getColorTable(i), i);
+            displayData.setChannelMinimum(i, inputImage.getChannelMinimum(i));
+            displayData.setChannelMaximum(i, inputImage.getChannelMaximum(i));
+        }
+        if(projectionChoice != projectionMethods.NONE && chIndex > zIndex)
+            displayData.axis(chIndex-1).setType(Axes.CHANNEL);
+        else
+            displayData.axis(chIndex).setType(Axes.CHANNEL);
+        displayData.setCompositeChannelCount(inputImage.getCompositeChannelCount());
+        currentDisplayView = (DatasetView) imageDisplayService.createDataView(displayData);
         currentDisplay = imageDisplayService.getDisplayService().createDisplay(currentDisplayView);
+//        currentDisplayView.setColorMode(inputView.getColorMode());
+//        currentDisplayView.setComposite(inputView.getProjector().isComposite());
+
     }
 
     protected void init() {
         xIndex = inputImage.dimensionIndex(Axes.X);
         yIndex = inputImage.dimensionIndex(Axes.Y);
         zIndex = inputImage.dimensionIndex(Axes.Z);
+        chIndex = inputImage.dimensionIndex(Axes.CHANNEL);
 
         xDim = inputImage.dimension(xIndex);
         yDim = inputImage.dimension(yIndex);
