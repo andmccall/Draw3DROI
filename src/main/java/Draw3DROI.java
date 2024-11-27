@@ -127,15 +127,20 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
 
     //final Overlay o = overlayService.getActiveOverlay(display); //will try and compare
     protected void addROI(){
+        Roi inputROI = WindowManager.getCurrentImage().getRoi();
+        if(inputROI == null){
+            logService.warn("No ROI found");
+            return;
+        }
         switch (viewChoiceSelection){
             case "XY":
-                xyROI = WindowManager.getCurrentImage().getRoi();
+                xyROI = inputROI;
                 break;
             case "XZ":
-                xzROI = WindowManager.getCurrentImage().getRoi();
+                xzROI = inputROI;
                 break;
             case "YZ":
-                yzROI = WindowManager.getCurrentImage().getRoi();
+                yzROI = inputROI;
                 break;
         }
         statusService.showStatus("ROI registered");
@@ -169,6 +174,10 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
     }
 
     protected void generateMask(){
+        if(xyROI == null || xzROI == null || yzROI == null){
+            logService.warn("Must add an ROI for each perspective to generate 3D mask");
+            return;
+        }
         statusService.showStatus("Generating mask.");
         FinalDimensions dims = new FinalDimensions(xDim, yDim, zDim);
         Img<BitType> outputImg = ops.create().img(dims, new BitType());
