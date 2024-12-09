@@ -3,7 +3,6 @@ import ij.gui.Roi;
 import net.imagej.Dataset;
 import net.imagej.DatasetService;
 import net.imagej.ImgPlus;
-import net.imagej.Position;
 import net.imagej.axis.Axes;
 import net.imagej.display.DatasetView;
 import net.imagej.display.ImageDisplayService;
@@ -12,7 +11,8 @@ import net.imagej.ops.Ops;
 import net.imagej.ops.special.computer.Computers;
 import net.imagej.ops.special.computer.UnaryComputerOp;
 import net.imglib2.FinalDimensions;
-import net.imglib2.RandomAccessibleInterval;
+import net.imglib2.FinalInterval;
+import net.imglib2.exception.InvalidDimensionsException;
 import net.imglib2.img.Img;
 import net.imglib2.img.ImgView;
 import net.imglib2.loops.LoopBuilder;
@@ -30,6 +30,7 @@ import org.scijava.display.Display;
 import org.scijava.log.LogService;
 import org.scijava.plugin.Parameter;
 import org.scijava.plugin.Plugin;
+import org.scijava.ui.DialogPrompt;
 import org.scijava.ui.UIService;
 import org.scijava.widget.Button;
 
@@ -56,7 +57,7 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
 
     @Parameter(visibility = ItemVisibility.MESSAGE, persist = false)
     private final String msg =
-            "Draw any ROI selection for each perspective, then click Create 3D mask." ;
+            "Set any ROI selection for each perspective, then click Create 3D mask." ;
 
     @Parameter(label="Display perspective:",choices={"Front (XY)", "Top (XZ)", "Left (YZ)"}, style="radioButtonHorizontal", persist=false, callback="viewChoice")
     private String viewChoiceSelection;
@@ -64,13 +65,19 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
     @Parameter(label="Projection method:", persist = false, callback = "viewChoice")
     private projectionMethods projectionChoice;
 
-    @Parameter(label="Add perspective's ROI.", callback = "addROI")
-    private Button addROIButton;
+    @Parameter(label="Set perspective's ROI.", callback = "setROI")
+    private Button setROIButton;
 
-    @Parameter(label="Preview?")
+    @Parameter(label="Get perspective's ROI.", callback = "getROI")
+    private Button getROIButton;
+
+    @Parameter(label="Reset perspective's ROI.", callback = "resetROI")
+    private Button resetROIButton;
+
+    @Parameter(label="Preview?", persist = false)
     private boolean preview;
 
-    @Parameter(label="Create 3D mask", callback = "generateMask")
+    @Parameter(label="Create 3D mask", callback = "exportMask")
     private Button createMaskButton;
 
     @Parameter
@@ -99,99 +106,123 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
     private String imageName;
     private DatasetView currentDisplayView;
     protected Display currentDisplay;
+    private ImgPlus<T> currentXYView;
+    private Img<T> previewMask;
     private Img currentView;
     private int xIndex, yIndex, zIndex, chIndex;
+    private int previewChIndex;
     private long xDim, yDim, zDim;
     private Roi xyROI, xzROI, zyROI;
+    private boolean changes;
 
 
     @Override
     public void run(){
+        //command is run exclusively interactively
     }
 
     @Override
     public void preview(){
-        if(!preview)
+        if(!preview) {
+            currentXYView = inputImage;
+            viewChoice();
             return;
-        if(projectionChoice == projectionMethods.NONE)
-            preview3d();
-        else
-            preview2d();
-    }
-
-    protected void preview2d(){
-
-    }
-
-    protected void preview3d(){
-        RandomAccessibleInterval currentSliceImage = currentDisplayView.xyPlane();
-        //long currentSliceValue = currentDisplayView.getPlanePosition().getIndex();
-        int currentSliceValue = WindowManager.getCurrentImage().getSlice();
-
-
-
-        switch (viewChoiceSelection){
-            case "XY":
-
-                break;
-            case "XZ":
-
-                break;
-            case "YZ":
-
-                break;
         }
-        currentDisplay.add()?
+        if(changes) {
+            generatePreviewMask();
+        }
+        showPreviewMask();
+        viewChoice();
     }
 
-//    @Override
-//    public void onEvent(DisplayUpdatedEvent){
-//
-//    }
-
+    //This doesn't seem to do anything yet.
+    @Override
+    public void cancel(){
+        if(currentDisplay != null) currentDisplay.close();
+        if(currentDisplayView != null) currentDisplayView.dispose();
+    }
 
     protected void viewChoice(){
         switch (viewChoiceSelection){
-            case "XY":
-                currentView = ImgView.wrap(inputImage);
+            case "Front (XY)":
+                currentView = ImgView.wrap(currentXYView);
                 break;
-            case "XZ":
-                currentView = ImgView.wrap(Views.permute(inputImage, yIndex, zIndex));
+            case "Top (XZ)":
+                currentView = ImgView.wrap(Views.permute(currentXYView, yIndex, zIndex));
                 break;
-            case "YZ":
-                currentView = ImgView.wrap(Views.permute(inputImage, xIndex, zIndex));
+            case "Left (YZ)":
+                currentView = ImgView.wrap(Views.permute(currentXYView, xIndex, zIndex));
                 break;
         }
         if(projectionChoice != projectionMethods.NONE) {
-            currentView = zProject(currentView);
+            currentView = zProject(currentView, projectionChoice.projectorOp);
         }
         updateDisplay();
     }
 
 
     //final Overlay o = overlayService.getActiveOverlay(display); //will try and compare
-    protected void addROI(){
+    protected void setROI(){
         Roi inputROI = WindowManager.getCurrentImage().getRoi();
         if(inputROI == null){
             logService.warn("No ROI found");
             return;
         }
         switch (viewChoiceSelection){
-            case "XY":
+            case "Front (XY)":
                 xyROI = inputROI;
                 break;
-            case "XZ":
+            case "Top (XZ)":
                 xzROI = inputROI;
                 break;
-            case "YZ":
+            case "Left (YZ)":
                 zyROI = inputROI;
                 break;
         }
+        changes = true;
+        preview();
         statusService.showStatus("ROI registered");
         WindowManager.getCurrentImage().deleteRoi();
     }
 
-    protected Img zProject(Img input) {
+    protected void getROI(){
+        if(WindowManager.getCurrentImage().getRoi() != null){
+            DialogPrompt.Result result = uiService.showDialog("This will overwrite your current ROI, continue?", "Warning", DialogPrompt.MessageType.WARNING_MESSAGE, DialogPrompt.OptionType.OK_CANCEL_OPTION);
+            if (result == DialogPrompt.Result.CANCEL_OPTION)
+                return;
+        }
+        switch (viewChoiceSelection){
+            case "Front (XY)":
+                WindowManager.getCurrentImage().setRoi(xyROI);
+                break;
+            case "Top (XZ)":
+                WindowManager.getCurrentImage().setRoi(xzROI);
+                break;
+            case "Left (YZ)":
+                WindowManager.getCurrentImage().setRoi(zyROI);
+                break;
+        }
+    }
+
+    protected void resetROI(){
+        switch (viewChoiceSelection){
+            case "Front (XY)":
+                xyROI = new Roi(0,0,xDim,yDim);
+                break;
+            case "Top (XZ)":
+                xzROI = new Roi(0,0,xDim,zDim);
+                break;
+            case "Left (YZ)":
+                zyROI = new Roi(0,0,zDim,yDim);
+                break;
+        }
+        changes = true;
+        preview();
+        statusService.showStatus("ROI reset");
+    }
+
+
+    protected Img zProject(Img input, Class projectionOp) {
         long[] projectedDimensions = new long[input.numDimensions() - 1];
 
         int i = 0;
@@ -212,17 +243,62 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
                     projectedDimensions),new FloatType());
         }
 
-        UnaryComputerOp maxOp = Computers.unary(ops, projectionChoice.projectorOp, projection.firstElement(), input);
+        UnaryComputerOp maxOp = Computers.unary(ops, projectionOp, projection.firstElement(), input);
         ops.transform().project(projection, input, maxOp, zIndex);
         return projection;
     }
 
-    protected void generateMask(){
-        if(xyROI == null || xzROI == null || zyROI == null){
-            logService.warn("Must add an ROI for each perspective to generate 3D mask");
-            return;
+    protected void showPreviewMask(){
+        if(chIndex != -1) {
+            currentXYView = inputImage.copy();
         }
+        else {
+            currentXYView = ImgPlus.wrap(ImgView.wrap(Views.addDimension(inputImage, 0, 0)));
+        }
+
+        currentXYView = ImgPlus.wrap(ImgView.wrap(Views.concatenate(previewChIndex, currentXYView, previewMask)));
+        currentXYView.axis(previewChIndex).setType(Axes.CHANNEL);
+    }
+
+    protected void generatePreviewMask(){
         statusService.showStatus("Generating mask.");
+        final float maxValue = (float)inputImage.firstElement().getMaxValue();
+
+        if(chIndex != -1) {
+            currentXYView = inputImage.copy();
+            previewChIndex = chIndex;
+        }
+        else {
+            currentXYView = ImgPlus.wrap(ImgView.wrap(Views.addDimension(inputImage, 0, 0)));
+            previewChIndex = inputImage.numDimensions();
+        }
+
+        long[] min = new long[currentXYView.numDimensions()];
+        long[] max = new long[currentXYView.numDimensions()];
+        for(int d = 0; d < min.length; ++d){
+            min[d] = currentXYView.min(d);
+            max[d] = currentXYView.max(d);
+        }
+        min[previewChIndex] = 0;
+        max[previewChIndex] = 0;
+
+        previewMask = currentXYView.factory().create(ops.transform().crop(currentXYView, new FinalInterval(min, max), false));
+        LoopBuilder.setImages(Intervals.positions(previewMask), previewMask).multiThreaded().forEachPixel(
+            (position, value) ->{
+                int x = position.getIntPosition(xIndex);
+                int y = position.getIntPosition(yIndex);
+                int z = position.getIntPosition(zIndex);
+
+                if(xyROI.contains(x,y) && xzROI.contains(x, z) && zyROI.contains(z,y)) {
+                    value.setReal(maxValue);
+            }
+        });
+
+        changes = false;
+    }
+
+    protected void exportMask(){
+        statusService.showStatus("Exporting mask.");
         FinalDimensions dims = new FinalDimensions(xDim, yDim, zDim);
         Img<BitType> outputImg = ops.create().img(dims, new BitType());
 
@@ -236,7 +312,8 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
                         value.setOne();
                 }
         );
-
+        if(outputImg == null)
+            return;
         outputMask = datasetService.create(ImgPlus.wrap(outputImg));
         outputMask.setAxis(inputImage.axis(xIndex), 0);
         outputMask.setAxis(inputImage.axis(yIndex), 1);
@@ -247,31 +324,44 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
     }
 
     private void updateDisplay(){
+        Roi tempROI = WindowManager.getCurrentImage().getRoi();
         if(currentDisplay != null) currentDisplay.close();
         if(currentDisplayView != null) currentDisplayView.dispose();
+
         Dataset displayData = datasetService.create(currentView);
         displayData.setName("Working image-draw ROI");
 
-        int currChIndex;
+        int currentChIndex = currentXYView.dimensionIndex(Axes.CHANNEL);
 
-        if(projectionChoice != projectionMethods.NONE && chIndex > zIndex)
-            currChIndex = chIndex-1;
-        else
-            currChIndex = chIndex;
-        displayData.axis(currChIndex).setType(Axes.CHANNEL);
-        displayData.setCompositeChannelCount(inputImage.getCompositeChannelCount());
-        //todo: Add ColorTable copying. Tried previously but couldn't get it working.
+        if(currentChIndex != -1) {
+
+            int correctChIndex;
+
+            if (projectionChoice != projectionMethods.NONE && currentChIndex > zIndex)
+                correctChIndex = currentChIndex - 1;
+            else
+                correctChIndex = currentChIndex;
+            displayData.axis(correctChIndex).setType(Axes.CHANNEL);
+            displayData.setCompositeChannelCount((int)currentXYView.dimension(currentChIndex));
+            //todo: Add ColorTable copying. Tried previously but couldn't get it working.
+        }
 
         currentDisplayView = (DatasetView) imageDisplayService.createDataView(displayData);
         currentDisplay = imageDisplayService.getDisplayService().createDisplay(currentDisplayView);
 
-        //This next section seems to only affect ImageJ2, not Fiji.
+        /*
+        This next section seems to only affect ImageJ2, not Fiji, which makes it currently useless.
+        I'm keeping it for now, as I imagine it may help in the future.
+         */
         if (projectionChoice == projectionMethods.NONE) {
             for (int i = 0; i < inputView.getChannelCount(); i++) {
                 currentDisplayView.setChannelRange(i, inputView.getChannelMin(i), inputView.getChannelMax(i));
             }
             currentDisplayView.update();
         }
+
+        if (tempROI != null)
+            WindowManager.getCurrentImage().setRoi(tempROI);
     }
 
     protected void init() {
@@ -282,6 +372,11 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
         zIndex = inputImage.dimensionIndex(Axes.Z);
         chIndex = inputImage.dimensionIndex(Axes.CHANNEL);
 
+        if(xIndex == -1 || yIndex == -1 || zIndex == -1){
+            logService.error("Draw 3D ROI requires a 3D X-Y-Z image.", new InvalidDimensionsException(inputImage.dimensionsAsLongArray(), "Image is not a compatible 3D image."));
+        }
+
+
         xDim = inputImage.dimension(xIndex);
         yDim = inputImage.dimension(yIndex);
         zDim = inputImage.dimension(zIndex);
@@ -290,8 +385,11 @@ public class Draw3DROI< T extends RealType< T > > extends InteractiveCommand {
         xzROI = new Roi(0,0,xDim,zDim);
         zyROI = new Roi(0,0,zDim,yDim);
 
-        currentView = inputImage;
+        changes = true;
 
+        currentXYView = inputImage;
+
+        currentView = currentXYView;
         updateDisplay();
     }
 }
